@@ -1,0 +1,12 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+easyocr==1.7.2
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.9.1+cpu
+spacy==3.7.6
+google-generativeai==0.8.3
+pydantic==2.9.2
+python-dotenv==1.0.1

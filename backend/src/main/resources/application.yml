@@ -1,0 +1,15 @@
+server:
+  port: 8080
+
+spring:
+  data:
+    mongodb:
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb+srv://vasuantala098_db_user:NJZwzzODvW14WKnr@bussiness-card-analyzer.pjjkho7.mongodb.net/cardanalyzer?appName=Bussiness-Card-Analyzer}
+      database: ${SPRING_DATA_MONGODB_DATABASE:cardanalyzer}
+
+ml-service:
+  base-url: ${ML_SERVICE_URL:http://localhost:8000}
+
+logging:
+  level:
+    com.vasu.cardanalyzer: INFO

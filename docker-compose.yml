@@ -1,0 +1,50 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:7
+    container_name: card-analyzer-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: cardanalyzer
+
+  ml-service:
+    build: ./ml-service
+    container_name: card-analyzer-ml
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./ml-service/.env
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+    volumes:
+      - ./ml-service:/app
+
+  backend:
+    build: ./backend
+    container_name: card-analyzer-backend
+    ports:
+      - "8080:8080"
+    depends_on:
+      - ml-service
+    environment:
+      - SPRING_DATA_MONGODB_URI=mongodb+srv://vasuantala098_db_user:NJZwzzODvW14WKnr@bussiness-card-analyzer.pjjkho7.mongodb.net/cardanalyzer?appName=Bussiness-Card-Analyzer
+      - SPRING_DATA_MONGODB_DATABASE=cardanalyzer
+      - ML_SERVICE_URL=http://ml-service:8000
+
+  frontend:
+    build: ./frontend
+    container_name: card-analyzer-frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8080/api
+
+volumes:
+  mongo_data:

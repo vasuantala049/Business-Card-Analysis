@@ -75,6 +75,23 @@ _nlp = None
 _GEMINI_QUOTA_BACKOFF_UNTIL = 0.0
 
 
+def _line_tokens(line: str) -> list[str]:
+    return re.findall(r"[a-zA-Z0-9&]+", line.lower())
+
+
+def _hint_count(line: str, hints: set[str]) -> int:
+    lowered = line.lower()
+    tokens = set(_line_tokens(line))
+    count = 0
+    for hint in hints:
+        if " " in hint:
+            if hint in lowered:
+                count += 1
+        elif hint in tokens:
+            count += 1
+    return count
+
+
 def _regex_fields(text: str) -> dict:
     normalized_variants = [
         text,
@@ -159,19 +176,20 @@ def _looks_like_company(line: str) -> bool:
     lowered = line.lower()
     if EMAIL_RE.search(line) or PHONE_RE.search(line) or WEBSITE_RE.search(line):
         return False
-    if any(hint in lowered for hint in COMPANY_HINTS):
+    if _hint_count(line, COMPANY_HINTS) > 0:
         return True
     return line.isupper() and 2 <= len(line.split()) <= 6
 
 
 def _looks_like_designation(line: str) -> bool:
-    lowered = line.lower()
-    return any(hint in lowered for hint in DESIGNATION_HINTS)
+    return _hint_count(line, DESIGNATION_HINTS) > 0
 
 
 def _looks_like_address(line: str) -> bool:
-    lowered = line.lower()
-    return any(hint in lowered for hint in ADDRESS_HINTS) or bool(re.search(r"\d{4,}", line))
+    has_address_hint = _hint_count(line, ADDRESS_HINTS) > 0
+    has_long_number = bool(re.search(r"\d{4,}", line))
+    has_address_punctuation = "," in line
+    return has_address_hint or has_long_number or has_address_punctuation
 
 
 def _score_name_candidate(line: str) -> int:
@@ -186,8 +204,9 @@ def _score_name_candidate(line: str) -> int:
         score += 3
     if len(line) <= 28:
         score += 1
-    if any(hint in line.lower() for hint in DESIGNATION_HINTS | COMPANY_HINTS | ADDRESS_HINTS):
-        score -= 8
+    score -= 4 * _hint_count(line, DESIGNATION_HINTS)
+    score -= 4 * _hint_count(line, COMPANY_HINTS)
+    score -= 3 * _hint_count(line, ADDRESS_HINTS)
     if any(ch.isdigit() for ch in line):
         score -= 5
     return score
@@ -197,18 +216,16 @@ def _score_company_candidate(line: str) -> int:
     if not _is_plausible_text_line(line):
         return -100
 
-    lowered = line.lower()
     score = 0
-    if any(hint in lowered for hint in COMPANY_HINTS):
-        score += 6
+    score += 4 * _hint_count(line, COMPANY_HINTS)
     if line.isupper():
         score += 2
     if 2 <= len(line.split()) <= 5:
         score += 1
-    if any(hint in lowered for hint in DESIGNATION_HINTS):
-        score -= 8
-    if any(hint in lowered for hint in ADDRESS_HINTS):
-        score -= 6
+    score -= 4 * _hint_count(line, DESIGNATION_HINTS)
+    score -= 3 * _hint_count(line, ADDRESS_HINTS)
+    if re.search(r"\d", line):
+        score -= 2
     return score
 
 
@@ -216,17 +233,97 @@ def _score_designation_candidate(line: str) -> int:
     if not _is_plausible_text_line(line):
         return -100
 
-    lowered = line.lower()
     score = 0
-    if any(hint in lowered for hint in DESIGNATION_HINTS):
-        score += 6
+    score += 4 * _hint_count(line, DESIGNATION_HINTS)
     if 2 <= len(line.split()) <= 4:
         score += 1
-    if any(hint in lowered for hint in COMPANY_HINTS):
-        score -= 6
-    if any(hint in lowered for hint in ADDRESS_HINTS):
-        score -= 6
+    score -= 4 * _hint_count(line, COMPANY_HINTS)
+    score -= 4 * _hint_count(line, ADDRESS_HINTS)
+    if re.search(r"\d", line):
+        score -= 3
+    if len(line) > 40:
+        score -= 2
     return score
+
+
+def _score_address_candidate(line: str) -> int:
+    if EMAIL_RE.search(line) or PHONE_RE.search(line) or WEBSITE_RE.search(line):
+        return -100
+
+    score = 0
+    score += 3 * _hint_count(line, ADDRESS_HINTS)
+    if re.search(r"\d", line):
+        score += 2
+    if "," in line:
+        score += 2
+    if len(line.split()) >= 4:
+        score += 1
+    score -= 3 * _hint_count(line, DESIGNATION_HINTS)
+    score -= 2 * _hint_count(line, COMPANY_HINTS)
+    return score
+
+
+def _resolve_field_conflicts(fields: dict, lines: list[str]) -> dict:
+    """Correct obvious cross-field swaps (company/designation/address/name)."""
+    result = dict(fields)
+    non_contact_lines = [line for line in lines if _is_plausible_text_line(line)]
+
+    best_name = max(non_contact_lines, key=_score_name_candidate, default=None)
+    best_company = max(non_contact_lines, key=_score_company_candidate, default=None)
+    best_designation = max(non_contact_lines, key=_score_designation_candidate, default=None)
+
+    if result.get("name") and _score_name_candidate(result["name"]) < 1 and best_name and _score_name_candidate(best_name) > _score_name_candidate(result["name"]):
+        result["name"] = best_name
+
+    if result.get("company") and _score_company_candidate(result["company"]) < 1 and best_company and _score_company_candidate(best_company) > _score_company_candidate(result["company"]):
+        result["company"] = best_company
+
+    if result.get("designation") and _score_designation_candidate(result["designation"]) < 1 and best_designation and _score_designation_candidate(best_designation) > _score_designation_candidate(result["designation"]):
+        result["designation"] = best_designation
+
+    company = result.get("company")
+    designation = result.get("designation")
+    if company and designation:
+        company_as_company = _score_company_candidate(company)
+        company_as_designation = _score_designation_candidate(company)
+        designation_as_designation = _score_designation_candidate(designation)
+        designation_as_company = _score_company_candidate(designation)
+        if company_as_designation > company_as_company and designation_as_company > designation_as_designation:
+            result["company"], result["designation"] = designation, company
+
+    address_candidates = [line for line in lines if _score_address_candidate(line) > 1]
+    if address_candidates:
+        unique_candidates = list(dict.fromkeys(address_candidates))
+        combined = ", ".join(unique_candidates)
+        existing = result.get("address")
+        if not existing or _score_address_candidate(existing) < 2:
+            result["address"] = combined
+
+    # Avoid assigning the exact same line to multiple semantic fields.
+    used = {}
+    for field in ("name", "designation", "company"):
+        value = result.get(field)
+        if value:
+            used.setdefault(value, []).append(field)
+
+    for value, field_names in used.items():
+        if len(field_names) <= 1:
+            continue
+        ranking = sorted(
+            field_names,
+            key=lambda f: {
+                "name": _score_name_candidate(value),
+                "designation": _score_designation_candidate(value),
+                "company": _score_company_candidate(value),
+            }[f],
+            reverse=True,
+        )
+        keeper = ranking[0]
+        for f in field_names:
+            if f != keeper:
+                result[f] = None
+
+    return result
 
 
 def _heuristic_fields(text: str) -> dict:
@@ -239,8 +336,6 @@ def _heuristic_fields(text: str) -> dict:
         if EMAIL_RE.search(line) or PHONE_RE.search(line) or WEBSITE_RE.search(line):
             contact_index = idx
             break
-
-    search_space = lines[:contact_index] if contact_index > 0 else lines
 
     # Use all non-contact lines for scoring so a card still works even when OCR
     # order is messy or the contact line is merged with a title.
@@ -280,7 +375,7 @@ def _heuristic_fields(text: str) -> dict:
                 designation = None
 
     if address is None:
-        address_lines = [line for line in lines if _looks_like_address(line)]
+        address_lines = [line for line in lines if _score_address_candidate(line) > 1]
         if address_lines:
             address = ", ".join(dict.fromkeys(address_lines))
 
@@ -291,12 +386,13 @@ def _heuristic_fields(text: str) -> dict:
         if top_candidates:
             name = max(top_candidates, key=_score_name_candidate)
 
-    return {
+    result = {
         "name": name,
         "designation": designation,
         "company": company,
         "address": address,
     }
+    return _resolve_field_conflicts(result, lines)
 
 
 def _spacy_names(text: str) -> dict:
@@ -339,7 +435,11 @@ def _gemini_fields(text: str) -> Optional[dict]:
             "Extract structured contact fields from this OCR text taken from a "
             "business card. Return ONLY compact JSON with keys: name, designation, "
             "company, website, address (each a string or null). Do not include "
-            "emails or phone numbers, those are handled separately.\n\n"
+            "emails or phone numbers, those are handled separately. "
+            "Important mapping rules: name must be a person name; designation must "
+            "be a role/title; company must be an organization name; address must "
+            "contain location-like text and never a pure company or designation. "
+            "If uncertain, use null for that field.\n\n"
             f"OCR text:\n{text}"
         )
         last_exc = None
@@ -380,6 +480,7 @@ def _gemini_fields(text: str) -> Optional[dict]:
 
 
 def extract_fields(text: str):
+    lines = [_compact_contact_line(line) for line in _clean_lines(text)]
     base = _regex_fields(text)
     base.update({k: v for k, v in _heuristic_fields(text).items() if v and not base.get(k)})
 
@@ -389,16 +490,19 @@ def extract_fields(text: str):
         if gemini_fields:
             logger.info("Extraction source: Gemini")
             base.update(gemini_fields)
+            base = _resolve_field_conflicts(base, lines)
             source = "gemini"
         else:
             logger.info("Gemini returned no structured fields; falling back to spaCy + regex")
             spacy_result = _spacy_names(text)
             base.update({k: v for k, v in spacy_result.items() if v and not base.get(k)})
+            base = _resolve_field_conflicts(base, lines)
             source = "spacy_regex"
     else:
         logger.info("Extraction source: spaCy + regex")
         spacy_result = _spacy_names(text)
         base.update({k: v for k, v in spacy_result.items() if v and not base.get(k)})
+        base = _resolve_field_conflicts(base, lines)
         source = "spacy_regex"
 
     logger.info(

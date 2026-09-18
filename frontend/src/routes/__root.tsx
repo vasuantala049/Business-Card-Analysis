@@ -12,6 +12,8 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider, useAuth } from "../components/AuthContext";
+import { LogOut, User as UserIcon } from "lucide-react";
 
 function NotFoundComponent() {
   return (
@@ -126,18 +128,19 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-function RootComponent() {
-  const { queryClient } = Route.useRouteContext();
+function NavigationBar() {
+  const { user, isAuthenticated, logout } = useAuth();
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <div className="min-h-screen paper-grid">
-        <header className="border-b border-border/70 bg-background/80 backdrop-blur">
-          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
-            <Link to="/" className="flex min-w-0 items-center gap-2">
-              <span aria-hidden="true" className="h-5 w-3 rounded-b-[3px] bg-brass" />
-              <span className="truncate font-display text-base font-semibold">Cardfile</span>
-            </Link>
+    <header className="border-b border-border/70 bg-background/80 backdrop-blur sticky top-0 z-50">
+      <div className="mx-auto flex max-w-5xl items-center justify-between gap-4 px-4 py-3">
+        <Link to="/" className="flex min-w-0 items-center gap-2">
+          <span aria-hidden="true" className="h-5 w-3 rounded-b-[3px] bg-brass" />
+          <span className="truncate font-display text-base font-semibold">Cardfile</span>
+        </Link>
+
+        {isAuthenticated ? (
+          <div className="flex items-center gap-4">
             <nav className="flex items-center gap-1 text-sm">
               <Link
                 to="/"
@@ -155,12 +158,56 @@ function RootComponent() {
                 Saved cards
               </Link>
             </nav>
+
+            <div className="h-4 w-px bg-border" />
+
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground bg-accent/50 px-2.5 py-1 rounded-full border border-border">
+                <UserIcon className="w-3.5 h-3.5 text-primary" />
+                <span className="max-w-[120px] truncate text-foreground">{user?.name || user?.email}</span>
+              </div>
+              <button
+                onClick={logout}
+                title="Log out"
+                className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded-lg transition"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           </div>
-        </header>
-        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-        <Outlet />
+        ) : (
+          <nav className="flex items-center gap-2 text-sm">
+            <Link
+              to="/login"
+              className="rounded-md px-3 py-1.5 font-medium hover:bg-accent text-foreground"
+            >
+              Sign In
+            </Link>
+            <Link
+              to="/signup"
+              className="rounded-md bg-primary text-primary-foreground px-3.5 py-1.5 font-medium hover:bg-primary/90 transition shadow-sm"
+            >
+              Sign Up
+            </Link>
+          </nav>
+        )}
       </div>
-      <Toaster />
+    </header>
+  );
+}
+
+function RootComponent() {
+  const { queryClient } = Route.useRouteContext();
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <div className="min-h-screen paper-grid">
+          <NavigationBar />
+          <Outlet />
+        </div>
+        <Toaster />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

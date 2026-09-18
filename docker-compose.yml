@@ -32,7 +32,7 @@ services:
     depends_on:
       - ml-service
     environment:
-      - SPRING_DATA_MONGODB_URI=mongodb+srv://vasuantala098_db_user:NJZwzzODvW14WKnr@bussiness-card-analyzer.pjjkho7.mongodb.net/cardanalyzer?appName=Bussiness-Card-Analyzer
+      - SPRING_DATA_MONGODB_URI=mongodb://mongo:27017/cardanalyzer
       - SPRING_DATA_MONGODB_DATABASE=cardanalyzer
       - ML_SERVICE_URL=http://ml-service:8000
 

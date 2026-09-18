@@ -8,8 +8,14 @@ import { CameraCapture } from "@/components/CameraCapture";
 import { ReviewCard } from "@/components/ReviewCard";
 import { ApiError, updateCard, uploadCard, type BusinessCard } from "@/lib/api";
 
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+
 export const Route = createFileRoute("/")({
-  component: Index,
+  component: () => (
+    <ProtectedRoute>
+      <Index />
+    </ProtectedRoute>
+  ),
   head: () => ({
     meta: [
       { title: "Scan a business card — Cardfile" },

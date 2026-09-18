@@ -9,8 +9,14 @@ import { CardTile } from "@/components/CardTile";
 import { ReviewCard } from "@/components/ReviewCard";
 import { deleteCard, listCards, updateCard, type BusinessCard } from "@/lib/api";
 
+import { ProtectedRoute } from "@/components/ProtectedRoute";
+
 export const Route = createFileRoute("/gallery")({
-  component: Gallery,
+  component: () => (
+    <ProtectedRoute>
+      <Gallery />
+    </ProtectedRoute>
+  ),
   head: () => ({
     meta: [
       { title: "Saved cards — Cardfile" },

@@ -14,6 +14,9 @@ public class BusinessCard {
     @Id
     private String id;
 
+    @org.springframework.data.mongodb.core.index.Indexed
+    private String ownerId;
+
     private String name;
     private String designation;
     private String company;

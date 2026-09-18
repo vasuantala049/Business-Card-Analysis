@@ -4,8 +4,29 @@ server:
 spring:
   data:
     mongodb:
-      uri: ${SPRING_DATA_MONGODB_URI:mongodb+srv://vasuantala098_db_user:NJZwzzODvW14WKnr@bussiness-card-analyzer.pjjkho7.mongodb.net/cardanalyzer?appName=Bussiness-Card-Analyzer}
+      uri: ${SPRING_DATA_MONGODB_URI:mongodb://localhost:27017/cardanalyzer}
       database: ${SPRING_DATA_MONGODB_DATABASE:cardanalyzer}
+      auto-index-creation: true
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID:dummy-google-client-id}
+            client-secret: ${GOOGLE_CLIENT_SECRET:dummy-google-client-secret}
+            scope:
+              - openid
+              - profile
+              - email
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:superSecretSigningKeyWithMinimum32BytesLength1234567890!}
+    expiration-ms: 86400000
+  cors:
+    allowed-origins: ${ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:8080}
+  frontend:
+    url: ${FRONTEND_URL:http://localhost:5173}
 
 ml-service:
   base-url: ${ML_SERVICE_URL:http://localhost:8000}

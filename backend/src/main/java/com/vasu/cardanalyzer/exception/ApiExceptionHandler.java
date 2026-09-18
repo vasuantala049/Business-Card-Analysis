@@ -35,10 +35,11 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleUnexpected(Exception ex) {
+        ex.printStackTrace();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of(
-                        "error", "Unexpected server error",
-                        "message", "Something went wrong while processing the request."
+                        "error", ex.getClass().getSimpleName(),
+                        "message", ex.getMessage() != null ? ex.getMessage() : "Something went wrong while processing the request."
                 ));
     }
 }

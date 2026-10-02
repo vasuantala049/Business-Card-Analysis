@@ -16,5 +16,5 @@ class ExtractionResponse(BaseModel):
     raw_text: str
     fields: CardFields
     logo_image: Optional[str] = None  # base64 PNG, null if no logo region found
-    extraction_source: str  # "gemini" or "spacy_regex"
+    extraction_source: str  # "openai" or "spacy_regex"
     confidence: float

@@ -1,5 +1,6 @@
 package com.vasu.cardanalyzer.exception;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.dao.DataAccessException;
@@ -31,6 +32,20 @@ public class ApiExceptionHandler {
                         "error", "Database is unavailable",
                         "message", "Could not reach MongoDB. Check Atlas access, network, and credentials."
                 ));
+    }
+
+    @ExceptionHandler(DuplicateBusinessCardException.class)
+    public ResponseEntity<Map<String, Object>> handleDuplicateCard(DuplicateBusinessCardException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "Duplicate business card");
+        body.put("message", ex.getMessage());
+        body.put("duplicateCardId", ex.getExistingCardId());
+        body.put("duplicateCardName", ex.getExistingName());
+        body.put("duplicateCardCompany", ex.getExistingCompany());
+        body.put("reasons", ex.getReasons());
+
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(body);
     }
 
     @ExceptionHandler(Exception.class)

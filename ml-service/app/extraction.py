@@ -5,6 +5,8 @@ import logging
 import time
 from typing import Optional
 
+from openai import OpenAI
+
 logger = logging.getLogger(__name__)
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
@@ -72,7 +74,7 @@ ADDRESS_HINTS = {
 }
 
 _nlp = None
-_GEMINI_QUOTA_BACKOFF_UNTIL = 0.0
+_OPENAI_QUOTA_BACKOFF_UNTIL = 0.0
 
 
 def _line_tokens(line: str) -> list[str]:
@@ -408,27 +410,28 @@ def _spacy_names(text: str) -> dict:
     return {"name": person, "company": org, "designation": None, "address": None}
 
 
-def _gemini_fields(text: str) -> Optional[dict]:
-    global _GEMINI_QUOTA_BACKOFF_UNTIL
+def _openai_fields(text: str) -> Optional[dict]:
+    global _OPENAI_QUOTA_BACKOFF_UNTIL
 
     now = time.time()
-    if now < _GEMINI_QUOTA_BACKOFF_UNTIL:
-        logger.info("Skipping Gemini until %.0f due to recent quota failure; using spaCy + regex fallback", _GEMINI_QUOTA_BACKOFF_UNTIL)
+    if now < _OPENAI_QUOTA_BACKOFF_UNTIL:
+        logger.info(
+            "Skipping OpenAI until %.0f due to recent quota failure; using spaCy + regex fallback",
+            _OPENAI_QUOTA_BACKOFF_UNTIL,
+        )
         return None
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        logger.info("GEMINI_API_KEY not set; using spaCy + regex fallback")
+        logger.info("OPENAI_API_KEY not set; using spaCy + regex fallback")
         return None
 
     try:
-        import google.generativeai as genai
-
-        logger.info("GEMINI_API_KEY detected; using Gemini for field extraction")
-        genai.configure(api_key=api_key)
+        client = OpenAI(api_key=api_key)
+        logger.info("OPENAI_API_KEY detected; using OpenAI for field extraction")
         model_candidates = [
-            os.getenv("GEMINI_MODEL", "gemini-2.0-flash"),
-            "gemini-1.5-flash",
+            os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            "gpt-4.1-mini",
         ]
 
         prompt = (
@@ -445,11 +448,21 @@ def _gemini_fields(text: str) -> Optional[dict]:
         last_exc = None
         for model_name in model_candidates:
             try:
-                logger.info("Trying Gemini model %s", model_name)
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt)
+                logger.info("Trying OpenAI model %s", model_name)
+                response = client.chat.completions.create(
+                    model=model_name,
+                    temperature=0,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You extract business card contact details and must return compact JSON only.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                )
+                content = (response.choices[0].message.content or "").strip()
                 cleaned = (
-                    response.text.strip()
+                    content
                     .removeprefix("```json")
                     .removesuffix("```")
                     .strip()
@@ -462,20 +475,20 @@ def _gemini_fields(text: str) -> Optional[dict]:
                         raise
                     parsed = json.loads(match.group(0))
 
-                logger.info("Gemini extraction succeeded with model %s", model_name)
+                logger.info("OpenAI extraction succeeded with model %s", model_name)
                 return parsed
             except Exception as exc:
                 last_exc = exc
-                logger.warning("Gemini model %s failed: %s", model_name, exc)
+                logger.warning("OpenAI model %s failed: %s", model_name, exc)
                 if "quota" in str(exc).lower() or "429" in str(exc):
-                    _GEMINI_QUOTA_BACKOFF_UNTIL = time.time() + 300
-                    logger.info("Gemini quota hit; backing off Gemini attempts for 300 seconds")
+                    _OPENAI_QUOTA_BACKOFF_UNTIL = time.time() + 300
+                    logger.info("OpenAI quota hit; backing off OpenAI attempts for 300 seconds")
                     break
 
         if last_exc is not None:
             raise last_exc
     except Exception as exc:  # rate limit, network issue, bad JSON, etc.
-        logger.warning("Gemini extraction failed, falling back to spaCy: %s", exc)
+        logger.warning("OpenAI extraction failed, falling back to spaCy: %s", exc)
         return None
 
 
@@ -484,16 +497,16 @@ def extract_fields(text: str):
     base = _regex_fields(text)
     base.update({k: v for k, v in _heuristic_fields(text).items() if v and not base.get(k)})
 
-    gemini_result = _gemini_fields(text)
-    if gemini_result:
-        gemini_fields = {k: v for k, v in gemini_result.items() if v}
-        if gemini_fields:
-            logger.info("Extraction source: Gemini")
-            base.update(gemini_fields)
+    openai_result = _openai_fields(text)
+    if openai_result:
+        openai_fields = {k: v for k, v in openai_result.items() if v}
+        if openai_fields:
+            logger.info("Extraction source: OpenAI")
+            base.update(openai_fields)
             base = _resolve_field_conflicts(base, lines)
-            source = "gemini"
+            source = "openai"
         else:
-            logger.info("Gemini returned no structured fields; falling back to spaCy + regex")
+            logger.info("OpenAI returned no structured fields; falling back to spaCy + regex")
             spacy_result = _spacy_names(text)
             base.update({k: v for k, v in spacy_result.items() if v and not base.get(k)})
             base = _resolve_field_conflicts(base, lines)

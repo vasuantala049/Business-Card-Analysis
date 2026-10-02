@@ -1,13 +1,13 @@
-import { useMemo, useState } from "react";
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { ScanLine, Search } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { CardTile } from "@/components/CardTile";
 import { ReviewCard } from "@/components/ReviewCard";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { deleteCard, listCards, updateCard, type BusinessCard } from "@/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ScanLine, Search } from "lucide-react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 
@@ -50,7 +50,13 @@ function Gallery() {
       setSelected(card);
       void qc.invalidateQueries({ queryKey: ["cards"] });
     },
-    onError: () => toast.error("Couldn't reach the card service. Check your connection and retry."),
+    onError: (error) => {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "Couldn't reach the card service. Check your connection and retry.",
+      );
+    },
   });
 
   const remove = useMutation({

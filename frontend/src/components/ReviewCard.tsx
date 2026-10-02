@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
-import { AlertTriangle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { LOW_CONFIDENCE, logoSrc, splitList, type BusinessCard } from "@/lib/api";
+import { AlertTriangle, Copy, Trash2, UserPlus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
 interface Props {
   card: BusinessCard;
@@ -16,25 +17,116 @@ interface Props {
   discardLabel?: string;
 }
 
+function escapeVCardValue(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\r?\n/g, "\\n")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,");
+}
+
+function buildVCard(card: BusinessCard) {
+  const displayName = card.name?.trim() || card.company?.trim() || "Saved contact";
+  const lines = ["BEGIN:VCARD", "VERSION:3.0", `FN:${escapeVCardValue(displayName)}`, "N:;;;;"];
+
+  if (card.company?.trim()) lines.push(`ORG:${escapeVCardValue(card.company.trim())}`);
+  if (card.designation?.trim()) lines.push(`TITLE:${escapeVCardValue(card.designation.trim())}`);
+
+  card.phones
+    .map((phone) => phone.trim())
+    .filter(Boolean)
+    .forEach((phone) => {
+      lines.push(`TEL;TYPE=CELL,VOICE:${escapeVCardValue(phone)}`);
+    });
+
+  card.emails
+    .map((email) => email.trim())
+    .filter(Boolean)
+    .forEach((email) => {
+      lines.push(`EMAIL;TYPE=INTERNET:${escapeVCardValue(email)}`);
+    });
+
+  if (card.website?.trim()) lines.push(`URL:${escapeVCardValue(card.website.trim())}`);
+  if (card.address?.trim()) lines.push(`ADR:;;${escapeVCardValue(card.address.trim())};;;;`);
+
+  lines.push("END:VCARD");
+  return lines.join("\r\n");
+}
+
+function downloadContact(card: BusinessCard) {
+  const vcard = buildVCard(card);
+  const contactName =
+    (card.name?.trim() || card.company?.trim() || "contact")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gi, "_")
+      .replace(/^_+|_+$/g, "") || "contact";
+
+  const blob = new Blob([vcard], { type: "text/vcard;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${contactName}.vcf`;
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function Field({
   label,
   value,
   onChange,
   mono,
   hint,
+  copyValue,
+  copyLabel,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   mono?: boolean;
   hint?: string;
+  copyValue?: string;
+  copyLabel?: string;
 }) {
   const id = `f-${label.toLowerCase().replace(/\W+/g, "-")}`;
+  const handleCopy = async () => {
+    if (!copyValue?.trim()) {
+      toast.error(`No ${copyLabel ?? label.toLowerCase()} to copy yet.`);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(copyValue);
+      toast.success(`${copyLabel ?? label} copied to clipboard`);
+    } catch {
+      toast.error(`Couldn't copy ${copyLabel ?? label.toLowerCase()}.`);
+    }
+  };
+
   return (
     <div className="space-y-1.5">
-      <Label htmlFor={id} className="text-[0.7rem] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-        {label}
-      </Label>
+      <div className="flex items-center justify-between gap-2">
+        <Label
+          htmlFor={id}
+          className="text-[0.7rem] font-medium uppercase tracking-[0.14em] text-muted-foreground"
+        >
+          {label}
+        </Label>
+        {copyValue !== undefined && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleCopy}
+            className="h-7 gap-1 px-2 text-[0.68rem] uppercase tracking-[0.12em] text-muted-foreground"
+          >
+            <Copy className="size-3.5" aria-hidden="true" />
+            Copy
+          </Button>
+        )}
+      </div>
       <Input
         id={id}
         value={value}
@@ -67,6 +159,22 @@ export function ReviewCard({
 
   const set = (k: keyof BusinessCard) => (v: string) => setDraft((d) => ({ ...d, [k]: v }));
   const lowConfidence = draft.confidence < LOW_CONFIDENCE;
+  const contactCard = { ...draft, phones: splitList(phones), emails: splitList(emails) };
+
+  const handleAddToContacts = () => {
+    const hasContactDetails =
+      Boolean(contactCard.name?.trim()) ||
+      contactCard.phones.length > 0 ||
+      contactCard.emails.length > 0;
+
+    if (!hasContactDetails) {
+      toast.error("Add a name, phone number, or email before exporting the contact.");
+      return;
+    }
+
+    downloadContact(contactCard);
+    toast.success("Contact file downloaded");
+  };
 
   return (
     <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
@@ -105,6 +213,21 @@ export function ReviewCard({
         </div>
       )}
 
+      {draft.originalImageBase64 && (
+        <div className="border-b border-border bg-secondary/20 px-5 py-4 sm:px-7">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-[0.7rem] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+              Original card
+            </p>
+          </div>
+          <img
+            src={`data:image/jpeg;base64,${draft.originalImageBase64}`}
+            alt="Original uploaded business card"
+            className="max-h-72 w-full rounded-md border border-border bg-background object-contain"
+          />
+        </div>
+      )}
+
       <div className="grid gap-4 px-5 py-6 sm:grid-cols-2 sm:px-7">
         <Field label="Name" value={draft.name ?? ""} onChange={set("name")} />
         <Field label="Designation" value={draft.designation ?? ""} onChange={set("designation")} />
@@ -116,6 +239,8 @@ export function ReviewCard({
           onChange={setPhones}
           mono
           hint="Separate multiple numbers with commas"
+          copyValue={phones}
+          copyLabel="phone number"
         />
         <Field
           label="Emails"
@@ -123,6 +248,8 @@ export function ReviewCard({
           onChange={setEmails}
           mono
           hint="Separate multiple addresses with commas"
+          copyValue={emails}
+          copyLabel="email address"
         />
         <div className="space-y-1.5 sm:col-span-2">
           <Label
@@ -142,19 +269,22 @@ export function ReviewCard({
       </div>
 
       <footer className="flex flex-wrap items-center gap-2 border-t border-border bg-secondary/60 px-5 py-4 sm:px-7">
+        <Button type="button" variant="outline" onClick={handleAddToContacts} disabled={saving}>
+          <UserPlus className="size-4" aria-hidden="true" /> Add to contacts
+        </Button>
         <Button
+          type="button"
           disabled={saving}
-          onClick={() =>
-            onSave({ ...draft, phones: splitList(phones), emails: splitList(emails) })
-          }
+          onClick={() => onSave({ ...draft, phones: splitList(phones), emails: splitList(emails) })}
         >
           {saving ? "Filing…" : "Save to collection"}
         </Button>
-        <Button variant="ghost" onClick={onDiscard} disabled={saving}>
+        <Button type="button" variant="ghost" onClick={onDiscard} disabled={saving}>
           {discardLabel}
         </Button>
         {onDelete && (
           <Button
+            type="button"
             variant="ghost"
             onClick={onDelete}
             disabled={saving}

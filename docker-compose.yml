@@ -19,8 +19,8 @@ services:
     env_file:
       - ./ml-service/.env
     environment:
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
     volumes:
       - ./ml-service:/app
 
@@ -32,15 +32,17 @@ services:
     depends_on:
       - ml-service
     environment:
-      - SPRING_DATA_MONGODB_URI=mongodb://mongo:27017/cardanalyzer
-      - SPRING_DATA_MONGODB_DATABASE=cardanalyzer
+      - SPRING_DATA_MONGODB_URI=${SPRING_DATA_MONGODB_URI}
+      - SPRING_DATA_MONGODB_DATABASE=${SPRING_DATA_MONGODB_DATABASE:-cardanalyzer}
       - ML_SERVICE_URL=http://ml-service:8000
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID in your environment or .env}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:?Set GOOGLE_CLIENT_SECRET in your environment or .env}
 
   frontend:
     build: ./frontend
     container_name: card-analyzer-frontend
     ports:
-      - "5173:5173"
+      - "3000:3000"
     depends_on:
       - backend
     environment:

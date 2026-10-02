@@ -9,9 +9,10 @@ export interface BusinessCard {
   website: string | null;
   address: string | null;
   rawOcrText: string;
+  originalImageBase64: string | null;
   logoImageBase64: string | null;
   confidence: number;
-  extractionSource: "gemini" | "spacy_regex" | string;
+  extractionSource: "openai" | "spacy_regex" | string;
   createdAt: string;
 }
 

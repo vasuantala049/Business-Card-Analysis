@@ -1,11 +1,12 @@
 package com.vasu.cardanalyzer.model;
 
-import lombok.Data;
+import java.time.Instant;
+import java.util.List;
+
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 
-import java.time.Instant;
-import java.util.List;
+import lombok.Data;
 
 @Data
 @Document(collection = "business_cards")
@@ -26,6 +27,7 @@ public class BusinessCard {
     private String address;
 
     private String rawOcrText;
+    private String originalImageBase64;
     private String logoImageBase64;
     private double confidence;
     private String extractionSource;

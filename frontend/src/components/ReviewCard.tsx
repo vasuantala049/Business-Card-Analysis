@@ -138,6 +138,18 @@ function Field({
   );
 }
 
+type VisibleFieldKey = "name" | "designation" | "company" | "website" | "phones" | "emails" | "address";
+
+const FIELD_LABELS: Record<VisibleFieldKey, string> = {
+  name: "Name",
+  designation: "Designation",
+  company: "Company",
+  website: "Website",
+  phones: "Phones",
+  emails: "Emails",
+  address: "Address",
+};
+
 export function ReviewCard({
   card,
   previewUrl,
@@ -150,16 +162,60 @@ export function ReviewCard({
   const [draft, setDraft] = useState(card);
   const [phones, setPhones] = useState(card.phones.join(", "));
   const [emails, setEmails] = useState(card.emails.join(", "));
+  const [visibleFields, setVisibleFields] = useState<Record<VisibleFieldKey, boolean>>({
+    name: Boolean(card.name?.trim()),
+    designation: Boolean(card.designation?.trim()),
+    company: Boolean(card.company?.trim()),
+    website: Boolean(card.website?.trim()),
+    phones: card.phones.length > 0,
+    emails: card.emails.length > 0,
+    address: Boolean(card.address?.trim()),
+  });
 
   useEffect(() => {
     setDraft(card);
     setPhones(card.phones.join(", "));
     setEmails(card.emails.join(", "));
+    setVisibleFields({
+      name: Boolean(card.name?.trim()),
+      designation: Boolean(card.designation?.trim()),
+      company: Boolean(card.company?.trim()),
+      website: Boolean(card.website?.trim()),
+      phones: card.phones.length > 0,
+      emails: card.emails.length > 0,
+      address: Boolean(card.address?.trim()),
+    });
   }, [card]);
 
   const set = (k: keyof BusinessCard) => (v: string) => setDraft((d) => ({ ...d, [k]: v }));
   const lowConfidence = draft.confidence < LOW_CONFIDENCE;
   const contactCard = { ...draft, phones: splitList(phones), emails: splitList(emails) };
+  const hasValue = (key: VisibleFieldKey) => {
+    switch (key) {
+      case "phones":
+        return phones.trim().length > 0;
+      case "emails":
+        return emails.trim().length > 0;
+      case "name":
+        return Boolean(draft.name?.trim());
+      case "designation":
+        return Boolean(draft.designation?.trim());
+      case "company":
+        return Boolean(draft.company?.trim());
+      case "website":
+        return Boolean(draft.website?.trim());
+      case "address":
+        return Boolean(draft.address?.trim());
+    }
+  };
+  const showField = (key: VisibleFieldKey) => visibleFields[key] || hasValue(key);
+  const hiddenFields = (Object.keys(FIELD_LABELS) as VisibleFieldKey[]).filter((key) => !showField(key));
+
+  const revealField = (key: VisibleFieldKey) =>
+    setVisibleFields((current) => ({
+      ...current,
+      [key]: true,
+    }));
 
   const handleAddToContacts = () => {
     const hasContactDetails =
@@ -175,6 +231,8 @@ export function ReviewCard({
     downloadContact(contactCard);
     toast.success("Contact file downloaded");
   };
+
+  const ocrDebugVariants = draft.ocrVariantsDebug ?? [];
 
   return (
     <section className="mx-auto w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
@@ -229,44 +287,90 @@ export function ReviewCard({
       )}
 
       <div className="grid gap-4 px-5 py-6 sm:grid-cols-2 sm:px-7">
-        <Field label="Name" value={draft.name ?? ""} onChange={set("name")} />
-        <Field label="Designation" value={draft.designation ?? ""} onChange={set("designation")} />
-        <Field label="Company" value={draft.company ?? ""} onChange={set("company")} />
-        <Field label="Website" value={draft.website ?? ""} onChange={set("website")} mono />
-        <Field
-          label="Phones"
-          value={phones}
-          onChange={setPhones}
-          mono
-          hint="Separate multiple numbers with commas"
-          copyValue={phones}
-          copyLabel="phone number"
-        />
-        <Field
-          label="Emails"
-          value={emails}
-          onChange={setEmails}
-          mono
-          hint="Separate multiple addresses with commas"
-          copyValue={emails}
-          copyLabel="email address"
-        />
-        <div className="space-y-1.5 sm:col-span-2">
-          <Label
-            htmlFor="f-address"
-            className="text-[0.7rem] font-medium uppercase tracking-[0.14em] text-muted-foreground"
-          >
-            Address
-          </Label>
-          <Textarea
-            id="f-address"
-            rows={3}
-            value={draft.address ?? ""}
-            onChange={(e) => set("address")(e.target.value)}
-            className="field-mono bg-background"
+        {showField("name") && <Field label="Name" value={draft.name ?? ""} onChange={set("name")} />}
+        {showField("designation") && (
+          <Field label="Designation" value={draft.designation ?? ""} onChange={set("designation")} />
+        )}
+        {showField("company") && <Field label="Company" value={draft.company ?? ""} onChange={set("company")} />}
+        {showField("website") && <Field label="Website" value={draft.website ?? ""} onChange={set("website")} mono />}
+        {showField("phones") && (
+          <Field
+            label="Phones"
+            value={phones}
+            onChange={setPhones}
+            mono
+            hint="Separate multiple numbers with commas"
+            copyValue={phones.trim() ? phones : undefined}
+            copyLabel="phone number"
           />
-        </div>
+        )}
+        {showField("emails") && (
+          <Field
+            label="Emails"
+            value={emails}
+            onChange={setEmails}
+            mono
+            hint="Separate multiple addresses with commas"
+            copyValue={emails.trim() ? emails : undefined}
+            copyLabel="email address"
+          />
+        )}
+        {showField("address") && (
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label
+              htmlFor="f-address"
+              className="text-[0.7rem] font-medium uppercase tracking-[0.14em] text-muted-foreground"
+            >
+              Address
+            </Label>
+            <Textarea
+              id="f-address"
+              rows={3}
+              value={draft.address ?? ""}
+              onChange={(e) => set("address")(e.target.value)}
+              className="field-mono bg-background"
+            />
+          </div>
+        )}
       </div>
+
+      {hiddenFields.length > 0 && (
+        <div className="border-t border-border px-5 py-4 sm:px-7">
+          <p className="text-[0.7rem] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            Add missing fields
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {hiddenFields.map((key) => (
+              <Button key={key} type="button" variant="outline" size="sm" onClick={() => revealField(key)}>
+                Add {FIELD_LABELS[key]}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {ocrDebugVariants.length > 0 && (
+        <details className="border-t border-border px-5 py-4 sm:px-7">
+          <summary className="cursor-pointer text-[0.7rem] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            OCR debug view
+          </summary>
+          <div className="mt-4 space-y-3">
+            {ocrDebugVariants.map((variant) => (
+              <div key={variant.variant} className="rounded-md border border-border bg-secondary/20 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium">{variant.variant}</p>
+                  <p className="text-xs text-muted-foreground">
+                    score {variant.score.toFixed(1)} · confidence {Math.round(variant.avgConfidence * 100)}%
+                  </p>
+                </div>
+                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-background p-3 text-xs leading-5 text-foreground">
+                  {variant.text || "<no text detected>"}
+                </pre>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
 
       <footer className="flex flex-wrap items-center gap-2 border-t border-border bg-secondary/60 px-5 py-4 sm:px-7">
         <Button type="button" variant="outline" onClick={handleAddToContacts} disabled={saving}>

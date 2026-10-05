@@ -9,6 +9,12 @@ export interface BusinessCard {
   website: string | null;
   address: string | null;
   rawOcrText: string;
+  ocrVariantsDebug?: Array<{
+    variant: string;
+    text: string;
+    score: number;
+    avgConfidence: number;
+  }>;
   originalImageBase64: string | null;
   logoImageBase64: string | null;
   confidence: number;

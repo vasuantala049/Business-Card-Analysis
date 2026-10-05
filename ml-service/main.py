@@ -4,11 +4,11 @@ import logging
 import numpy as np
 import cv2
 
-from app.preprocessing import preprocess_image
+from app.preprocessing import build_ocr_variants
 from app.ocr import run_best_ocr
 from app.extraction import extract_fields
 from app.logo_detection import extract_logo
-from app.schemas import ExtractionResponse
+from app.schemas import ExtractionResponse, OcrVariantDebug
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -39,8 +39,8 @@ async def extract(file: UploadFile = File(...)):
     if image is None:
         raise HTTPException(status_code=400, detail="Could not decode image")
 
-    processed = preprocess_image(image)
-    ocr_result, variant, attempts = run_best_ocr({"raw": image, "enhanced": processed})
+    variants = build_ocr_variants(image)
+    ocr_result, variant, attempts = run_best_ocr(variants)
     logger.info(
         "OCR variant scores: %s",
         ", ".join(
@@ -53,8 +53,9 @@ async def extract(file: UploadFile = File(...)):
         len(ocr_result.text.splitlines()),
         ocr_result.text.replace("\n", " | "),
     )
-    fields, source = extract_fields(ocr_result.text)
-    logo_base64 = extract_logo(image if variant == "raw" else processed, ocr_result.boxes)
+    all_texts = [attempt.result.text for attempt in attempts if attempt.result.text]
+    fields, source = extract_fields(ocr_result.text, ocr_result.lines, extra_texts=all_texts)
+    logo_base64 = extract_logo(variants.get(variant, image), ocr_result.boxes)
 
     return ExtractionResponse(
         raw_text=ocr_result.text,
@@ -62,4 +63,13 @@ async def extract(file: UploadFile = File(...)):
         logo_image=logo_base64,
         extraction_source=source,
         confidence=ocr_result.avg_confidence,
+        ocr_variants_debug=[
+            OcrVariantDebug(
+                variant=attempt.variant,
+                text=attempt.result.text,
+                score=attempt.score,
+                avg_confidence=attempt.result.avg_confidence,
+            )
+            for attempt in attempts
+        ],
     )

@@ -1,9 +1,10 @@
 package com.vasu.cardanalyzer.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.Data;
-
 import java.util.List;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import lombok.Data;
 
 @Data
 public class ExtractionResult {
@@ -21,6 +22,9 @@ public class ExtractionResult {
 
     private double confidence;
 
+    @JsonProperty("ocr_variants_debug")
+    private List<OcrVariantDebug> ocrVariantsDebug;
+
     @Data
     public static class Fields {
         private String name;
@@ -30,5 +34,15 @@ public class ExtractionResult {
         private List<String> emails;
         private String website;
         private String address;
+    }
+
+    @Data
+    public static class OcrVariantDebug {
+        private String variant;
+        private String text;
+        private double score;
+
+        @JsonProperty("avg_confidence")
+        private double avgConfidence;
     }
 }

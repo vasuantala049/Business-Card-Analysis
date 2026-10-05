@@ -3,6 +3,7 @@ package com.vasu.cardanalyzer.controller;
 import java.io.IOException;
 import java.util.Base64;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -55,6 +56,18 @@ public class BusinessCardController {
         BusinessCard card = new BusinessCard();
         card.setOwnerId(currentUser.getId());
         card.setRawOcrText(result.getRawText());
+        if (result.getOcrVariantsDebug() != null) {
+            card.setOcrVariantsDebug(result.getOcrVariantsDebug().stream()
+                    .map(debug -> {
+                        BusinessCard.OcrVariantDebug cardDebug = new BusinessCard.OcrVariantDebug();
+                        cardDebug.setVariant(debug.getVariant());
+                        cardDebug.setText(debug.getText());
+                        cardDebug.setScore(debug.getScore());
+                        cardDebug.setAvgConfidence(debug.getAvgConfidence());
+                        return cardDebug;
+                    })
+                    .collect(Collectors.toList()));
+        }
         card.setOriginalImageBase64(Base64.getEncoder().encodeToString(originalImageBytes));
         card.setLogoImageBase64(result.getLogoImage());
         card.setConfidence(result.getConfidence());

@@ -3,15 +3,19 @@ import re
 import json
 import logging
 import time
-from typing import Optional
+from typing import Optional, Any
 
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
-PHONE_RE = re.compile(r"(\+?\d{1,3}[\s-]?)?(\d{10}|\(?\d{3,4}\)?[\s-]?\d{3}[\s-]?\d{3,4})")
-WEBSITE_RE = re.compile(r"\b(?:https?://)?(?:www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:/[^\s]*)?\b")
+EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", re.I)
+MUNGED_EMAIL_RE = re.compile(
+    r"[a-zA-Z0-9._%+-]+\s*@\s*[a-zA-Z0-9.-]+\s*\.\s*[a-zA-Z]{2,}",
+    re.I,
+)
+PHONE_RE = re.compile(r"(?:\+|00)?\d[\d\s().-]{6,}\d")
+WEBSITE_RE = re.compile(r"\b(?:https?://)?(?:www\.)?[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(?:/[^\s]*)?\b", re.I)
 
 DESIGNATION_HINTS = {
     "agent",
@@ -36,6 +40,9 @@ COMPANY_HINTS = {
     "inc",
     "llc",
     "ltd",
+    "pvt",
+    "private",
+    "limited",
     "corp",
     "corporation",
     "company",
@@ -77,6 +84,132 @@ _nlp = None
 _OPENAI_QUOTA_BACKOFF_UNTIL = 0.0
 
 
+def _structured_line_text(line: Any) -> str:
+    if line is None:
+        return ""
+    if hasattr(line, "text"):
+        return str(getattr(line, "text") or "")
+    if isinstance(line, dict):
+        return str(line.get("text") or "")
+    return str(line)
+
+
+def _structured_line_bbox(line: Any) -> tuple[int, int, int, int]:
+    if hasattr(line, "bbox"):
+        bbox = getattr(line, "bbox")
+    elif isinstance(line, dict):
+        bbox = line.get("bbox")
+    else:
+        bbox = None
+
+    if not bbox or len(bbox) != 4:
+        return (0, 0, 0, 0)
+
+    x1, y1, x2, y2 = bbox
+    return (int(x1), int(y1), int(x2), int(y2))
+
+
+def _structured_lines(ocr_lines: Optional[list[Any]]) -> list[str]:
+    if not ocr_lines:
+        return []
+
+    ordered = sorted(
+        ocr_lines,
+        key=lambda line: (_structured_line_bbox(line)[1], _structured_line_bbox(line)[0]),
+    )
+    return [_compact_contact_line(_structured_line_text(line)) for line in ordered if _structured_line_text(line).strip()]
+
+
+def _normalize_contact_text(value: str) -> str:
+    value = re.sub(r"\s*=\s*", "@", value)
+    value = re.sub(r"\s*@\s*", "@", value)
+    value = re.sub(r"\s*\.\s*", ".", value)
+    value = re.sub(r"\s*\(\s*", "(", value)
+    value = re.sub(r"\s*\)\s*", ")", value)
+    value = re.sub(r"\s*\+\s*", "+", value)
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
+
+
+def _extract_emails(text: str) -> list[str]:
+    emails = []
+    for variant in [text, _normalize_contact_text(text), text.lower()]:
+        for match in list(EMAIL_RE.findall(variant)) + list(MUNGED_EMAIL_RE.findall(variant)):
+            normalized = _normalize_contact_text(match).replace(" ", "").lower()
+            if EMAIL_RE.fullmatch(normalized):
+                emails.append(normalized)
+
+    return list(dict.fromkeys(emails))
+
+
+def _extract_emails_from_lines(lines: list[str]) -> list[str]:
+    emails = []
+
+    joined_variants = [
+        "\n".join(lines),
+        " ".join(lines),
+        _normalize_contact_text("\n".join(lines)),
+        _normalize_contact_text(" ".join(lines)),
+    ]
+
+    # Try the full block first, then adjacent line pairs, because OCR often
+    # splits email local-parts and domains across two lines.
+    for variant in joined_variants:
+        emails.extend(_extract_emails(variant))
+
+    for idx in range(len(lines) - 1):
+        left = _normalize_contact_text(lines[idx])
+        right = _normalize_contact_text(lines[idx + 1])
+
+        left_local = left.replace("@", "").rstrip(".:;,-_")
+        right_domain = right.lstrip("@ ").strip(".:;,-_")
+
+        if left_local and right_domain and "." in right_domain:
+            candidate = f"{left_local}@{right_domain}".replace(" ", "")
+            if EMAIL_RE.fullmatch(candidate.lower()):
+                emails.append(candidate.lower())
+
+        # Also handle the common OCR mistake where @ becomes = on one line.
+        if "=" in left and "." in right:
+            candidate = f"{left.replace('=', '').replace(' ', '')}@{right.replace(' ', '')}".lower()
+            if EMAIL_RE.fullmatch(candidate):
+                emails.append(candidate)
+
+    return list(dict.fromkeys(emails))
+
+
+def _extract_phones(text: str) -> list[str]:
+    phones = []
+    seen = set()
+    for variant in [text, _normalize_contact_text(text)]:
+        for match in PHONE_RE.findall(variant):
+            candidate = _normalize_contact_text(match)
+            digits = re.sub(r"\D", "", candidate)
+            if len(digits) < 7 or len(digits) > 15:
+                continue
+
+            key = digits.lstrip("0") or digits
+            if key in seen:
+                continue
+            seen.add(key)
+
+            cleaned = re.sub(r"\s+", " ", candidate).strip(" ,;:|")
+            phones.append(cleaned)
+
+    return phones
+
+
+def _extract_websites(text: str) -> list[str]:
+    websites = []
+    for variant in [text, _normalize_contact_text(text)]:
+        for match in WEBSITE_RE.findall(variant):
+            cleaned = _normalize_contact_text(match).strip(" ,;:|")
+            if "@" not in cleaned:
+                websites.append(cleaned)
+
+    return list(dict.fromkeys(websites))
+
+
 def _line_tokens(line: str) -> list[str]:
     return re.findall(r"[a-zA-Z0-9&]+", line.lower())
 
@@ -94,21 +227,29 @@ def _hint_count(line: str, hints: set[str]) -> int:
     return count
 
 
-def _regex_fields(text: str) -> dict:
-    normalized_variants = [
-        text,
-        re.sub(r"\s*@\s*", "@", text),
-        re.sub(r"\s*\.\s*", ".", text),
-    ]
+def _regex_fields(
+    text: str,
+    lines: Optional[list[str]] = None,
+    extra_texts: Optional[list[str]] = None,
+) -> dict:
+    search_text = "\n".join(lines) if lines else text
+    normalized_variants = [search_text, _normalize_contact_text(search_text)]
+    if extra_texts:
+        for extra in extra_texts:
+            if extra and extra.strip():
+                normalized_variants.extend([extra, _normalize_contact_text(extra)])
 
     emails = []
     phones = []
     websites = []
 
     for variant in normalized_variants:
-        emails.extend(EMAIL_RE.findall(variant))
-        phones.extend(m.group(0).strip() for m in PHONE_RE.finditer(variant))
-        websites.extend(w for w in WEBSITE_RE.findall(variant) if "@" not in w)
+        emails.extend(_extract_emails(variant))
+        phones.extend(_extract_phones(variant))
+        websites.extend(_extract_websites(variant))
+
+    if lines:
+        emails.extend(_extract_emails_from_lines(lines))
 
     emails = list(dict.fromkeys(emails))
     phones = list(dict.fromkeys(phones))
@@ -138,6 +279,16 @@ def _compact_contact_line(line: str) -> str:
     line = re.sub(r"\s*-/\s*", "/", line)
     line = re.sub(r"\s*-\s*", "-", line)
     return re.sub(r"\s+", " ", line).strip()
+
+
+def _contains_contact_details(line: str) -> bool:
+    normalized = _normalize_contact_text(line)
+    return bool(
+        EMAIL_RE.search(normalized)
+        or MUNGED_EMAIL_RE.search(normalized)
+        or PHONE_RE.search(normalized)
+        or WEBSITE_RE.search(normalized)
+    )
 
 
 def _is_plausible_text_line(line: str) -> bool:
@@ -220,10 +371,21 @@ def _score_company_candidate(line: str) -> int:
 
     score = 0
     score += 4 * _hint_count(line, COMPANY_HINTS)
+    if any(token in line.lower() for token in ("private limited", "pvt ltd", "pvt. ltd", "limited")):
+        score += 3
     if line.isupper():
         score += 2
-    if 2 <= len(line.split()) <= 5:
+    word_count = len(line.split())
+    if 2 <= word_count <= 5:
         score += 1
+    if word_count >= 4:
+        score += 1
+    if word_count >= 5:
+        score += 1
+    if len(line) >= 24:
+        score += 1
+    if len(line) <= 22:
+        score -= 1
     score -= 4 * _hint_count(line, DESIGNATION_HINTS)
     score -= 3 * _hint_count(line, ADDRESS_HINTS)
     if re.search(r"\d", line):
@@ -328,21 +490,25 @@ def _resolve_field_conflicts(fields: dict, lines: list[str]) -> dict:
     return result
 
 
-def _heuristic_fields(text: str) -> dict:
-    lines = [_compact_contact_line(line) for line in _clean_lines(text)]
+def _heuristic_fields(text: str, lines: Optional[list[str]] = None) -> dict:
+    lines = lines or [_compact_contact_line(line) for line in _clean_lines(text)]
     if not lines:
         return {"name": None, "designation": None, "company": None, "address": None}
 
     contact_index = len(lines)
     for idx, line in enumerate(lines):
-        if EMAIL_RE.search(line) or PHONE_RE.search(line) or WEBSITE_RE.search(line):
+        if _contains_contact_details(line):
             contact_index = idx
             break
 
-    # Use all non-contact lines for scoring so a card still works even when OCR
-    # order is messy or the contact line is merged with a title.
-    non_contact_lines = [line for line in lines if _is_plausible_text_line(line)]
-    name = max(non_contact_lines, key=_score_name_candidate, default=None)
+    top_block = lines[:contact_index] if contact_index > 0 else lines[:3]
+    bottom_block = lines[contact_index + 1 :] if contact_index < len(lines) else []
+
+    candidate_lines = [line for line in top_block if _is_plausible_text_line(line)] or [
+        line for line in lines if _is_plausible_text_line(line)
+    ]
+
+    name = max(candidate_lines, key=_score_name_candidate, default=None)
     if name is not None and _score_name_candidate(name) < 0:
         name = None
 
@@ -363,21 +529,31 @@ def _heuristic_fields(text: str) -> dict:
                 address = line
 
     if company is None:
-        company_candidates = [line for line in non_contact_lines if line != name]
+        company_candidates = [line for line in top_block if line != name] or [line for line in lines if line != name]
         if company_candidates:
-            company = max(company_candidates, key=_score_company_candidate)
+            ranked_candidates = sorted(company_candidates, key=_score_company_candidate, reverse=True)
+            company = ranked_candidates[0]
+            if len(ranked_candidates) > 1:
+                top_score = _score_company_candidate(ranked_candidates[0])
+                second_score = _score_company_candidate(ranked_candidates[1])
+                if second_score >= top_score - 1 and len(ranked_candidates[1].split()) > len(company.split()):
+                    company = ranked_candidates[1]
             if _score_company_candidate(company) < 0:
                 company = None
 
     if designation is None:
-        designation_candidates = [line for line in non_contact_lines if line != name and line != company]
+        designation_candidates = [line for line in top_block if line != name and line != company] or [
+            line for line in lines if line != name and line != company
+        ]
         if designation_candidates:
             designation = max(designation_candidates, key=_score_designation_candidate)
             if _score_designation_candidate(designation) < 0:
                 designation = None
 
     if address is None:
-        address_lines = [line for line in lines if _score_address_candidate(line) > 1]
+        address_lines = [line for line in bottom_block if _score_address_candidate(line) > 1]
+        if not address_lines:
+            address_lines = [line for line in lines if _score_address_candidate(line) > 1]
         if address_lines:
             address = ", ".join(dict.fromkeys(address_lines))
 
@@ -492,10 +668,14 @@ def _openai_fields(text: str) -> Optional[dict]:
         return None
 
 
-def extract_fields(text: str):
-    lines = [_compact_contact_line(line) for line in _clean_lines(text)]
-    base = _regex_fields(text)
-    base.update({k: v for k, v in _heuristic_fields(text).items() if v and not base.get(k)})
+def extract_fields(
+    text: str,
+    ocr_lines: Optional[list[Any]] = None,
+    extra_texts: Optional[list[str]] = None,
+):
+    lines = _structured_lines(ocr_lines) or [_compact_contact_line(line) for line in _clean_lines(text)]
+    base = _regex_fields(text, lines, extra_texts=extra_texts)
+    base.update({k: v for k, v in _heuristic_fields(text, lines).items() if v and not base.get(k)})
 
     openai_result = _openai_fields(text)
     if openai_result:
@@ -503,6 +683,24 @@ def extract_fields(text: str):
         if openai_fields:
             logger.info("Extraction source: OpenAI")
             base.update(openai_fields)
+            heuristic_fields = _heuristic_fields(text, lines)
+
+            # Prefer the stronger heuristic company/designation/name when the
+            # LLM returns a shorter or noisier answer from the OCR text.
+            for field, scorer in (
+                ("name", _score_name_candidate),
+                ("designation", _score_designation_candidate),
+                ("company", _score_company_candidate),
+                ("address", _score_address_candidate),
+            ):
+                heuristic_value = heuristic_fields.get(field)
+                current_value = base.get(field)
+                if heuristic_value and (
+                    not current_value
+                    or scorer(heuristic_value) > scorer(current_value) + 1
+                ):
+                    base[field] = heuristic_value
+
             base = _resolve_field_conflicts(base, lines)
             source = "openai"
         else:

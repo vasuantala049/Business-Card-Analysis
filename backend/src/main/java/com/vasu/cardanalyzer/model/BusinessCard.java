@@ -27,10 +27,19 @@ public class BusinessCard {
     private String address;
 
     private String rawOcrText;
+    private List<OcrVariantDebug> ocrVariantsDebug;
     private String originalImageBase64;
     private String logoImageBase64;
     private double confidence;
     private String extractionSource;
 
     private Instant createdAt = Instant.now();
+
+    @Data
+    public static class OcrVariantDebug {
+        private String variant;
+        private String text;
+        private double score;
+        private double avgConfidence;
+    }
 }

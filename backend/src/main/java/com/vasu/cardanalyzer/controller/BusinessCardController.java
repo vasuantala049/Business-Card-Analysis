@@ -24,7 +24,7 @@ import com.vasu.cardanalyzer.model.BusinessCard;
 import com.vasu.cardanalyzer.repository.BusinessCardRepository;
 import com.vasu.cardanalyzer.security.UserPrincipal;
 import com.vasu.cardanalyzer.service.BusinessCardDuplicateService;
-import com.vasu.cardanalyzer.service.MlServiceClient;
+import com.vasu.cardanalyzer.service.QwenServiceClient;
 
 import lombok.RequiredArgsConstructor;
 
@@ -33,7 +33,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class BusinessCardController {
 
-    private final MlServiceClient mlServiceClient;
+    private final QwenServiceClient qwenServiceClient;
     private final BusinessCardRepository repository;
     private final BusinessCardDuplicateService duplicateService;
 
@@ -44,14 +44,25 @@ public class BusinessCardController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        ExtractionResult result = mlServiceClient.extract(file);
-
+        String contentType = file.getContentType();
         byte[] originalImageBytes;
         try {
             originalImageBytes = file.getBytes();
+            byte[] resizedBytes = resizeImageIfNecessary(originalImageBytes, 512);
+            if (resizedBytes != originalImageBytes) {
+                contentType = "image/jpeg";
+                originalImageBytes = resizedBytes;
+            }
         } catch (IOException e) {
             throw new IllegalStateException("Could not read uploaded file", e);
         }
+
+        String originalImageBase64 = Base64.getEncoder().encodeToString(originalImageBytes);
+        ExtractionResult result = qwenServiceClient.extract(
+                originalImageBase64,
+                contentType,
+                file.getOriginalFilename()
+        );
 
         BusinessCard card = new BusinessCard();
         card.setOwnerId(currentUser.getId());
@@ -68,7 +79,7 @@ public class BusinessCardController {
                     })
                     .collect(Collectors.toList()));
         }
-        card.setOriginalImageBase64(Base64.getEncoder().encodeToString(originalImageBytes));
+                card.setOriginalImageBase64(originalImageBase64);
         card.setLogoImageBase64(result.getLogoImage());
         card.setConfidence(result.getConfidence());
         card.setExtractionSource(result.getExtractionSource());
@@ -85,7 +96,18 @@ public class BusinessCardController {
 
         duplicateService.assertNotDuplicate(card, currentUser.getId(), null);
 
-        return ResponseEntity.ok(repository.save(card));
+        return ResponseEntity.ok(card);
+    }
+
+    @PostMapping
+    public ResponseEntity<BusinessCard> create(@RequestBody BusinessCard newCard,
+                                               @AuthenticationPrincipal UserPrincipal currentUser) {
+        if (currentUser == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        newCard.setOwnerId(currentUser.getId());
+        duplicateService.assertNotDuplicate(newCard, currentUser.getId(), null);
+        return ResponseEntity.ok(repository.save(newCard));
     }
 
     @GetMapping
@@ -139,5 +161,34 @@ public class BusinessCardController {
                     return ResponseEntity.noContent().<Void>build();
                 })
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    private byte[] resizeImageIfNecessary(byte[] imageBytes, int maxDimension) throws IOException {
+        try (java.io.ByteArrayInputStream bais = new java.io.ByteArrayInputStream(imageBytes)) {
+            java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(bais);
+            if (img == null) {
+                return imageBytes;
+            }
+            int width = img.getWidth();
+            int height = img.getHeight();
+            if (width <= maxDimension && height <= maxDimension) {
+                return imageBytes;
+            }
+            
+            double scale = Math.min((double) maxDimension / width, (double) maxDimension / height);
+            int newWidth = (int) (width * scale);
+            int newHeight = (int) (height * scale);
+            
+            java.awt.Image resultingImage = img.getScaledInstance(newWidth, newHeight, java.awt.Image.SCALE_SMOOTH);
+            java.awt.image.BufferedImage outputImage = new java.awt.image.BufferedImage(newWidth, newHeight, java.awt.image.BufferedImage.TYPE_INT_RGB);
+            java.awt.Graphics2D g2d = outputImage.createGraphics();
+            g2d.drawImage(resultingImage, 0, 0, null);
+            g2d.dispose();
+            
+            try (java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream()) {
+                javax.imageio.ImageIO.write(outputImage, "jpg", baos);
+                return baos.toByteArray();
+            }
+        }
     }
 }

@@ -8,11 +8,9 @@ logo, extracted automatically.
 
 - **Frontend** — React + Vite. File upload or live camera capture, editable
   results form, saved-cards list.
-- **Backend** — Spring Boot. Orchestrates the ML call, persists results to
-  MongoDB, exposes the REST API the frontend talks to.
-- **ML service** — FastAPI (Python). OpenCV preprocessing, EasyOCR text
-  extraction, OpenAI for field parsing with an offline
-  spaCy + regex fallback, OpenCV-heuristic logo crop.
+- **Backend** — Spring Boot. Accepts the upload, sends the image straight to
+  a local Qwen chat-completions endpoint, persists results to MongoDB, and
+  exposes the REST API the frontend talks to.
 - **Database** — MongoDB.
 
 ## Google login setup
@@ -45,44 +43,45 @@ missing, so you don’t end up debugging a fake login that only looks healthy.
 
 ## Cost
 
-Everything below runs locally, except the OpenAI API usage you choose to send:
+Everything below runs locally, except the Qwen-compatible model endpoint you choose to connect to:
 
-- OpenAI API — the ML service automatically falls back to spaCy + regex if
-  `OPENAI_API_KEY` is unset or the call fails/hits a rate limit, so nothing
-  breaks without it.
+- Qwen / llama.cpp-compatible endpoint — the Spring backend sends the card
+  image to `QWEN_BASE_URL` (default `http://localhost:50305/v1`) using the
+  Qwen chat-completions image format. No separate ML service is required.
 - MongoDB — local Docker runs use the bundled `mongo` service by default;
   if you run the backend directly, set `SPRING_DATA_MONGODB_URI` to a valid
   Atlas or self-hosted URI and keep `SPRING_DATA_MONGODB_DATABASE=cardanalyzer`.
-- EasyOCR, spaCy, OpenCV — open source, run locally inside the ml-service
-  container, no API cost.
 
 ## Running locally
 
 ```bash
-# edit .env and ml-service/.env to add OPENAI_API_KEY plus your MongoDB and Google OAuth values
+# edit .env to add QWEN_BASE_URL if your Qwen server is not on localhost:50305,
+# plus your MongoDB and Google OAuth values
 docker-compose up --build
 ```
 
+The frontend uploads the original image as binary multipart data. The Spring
+Boot backend is the only place that converts the image to Base64 before sending
+it to Qwen. The backend then builds the `image_url.url` data URL for the
+multimodal request.
+
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8080/api
-- ML service: http://localhost:8000/health
+- Qwen server: http://localhost:50305/v1 (external service)
 
-First build will take a while — EasyOCR pulls in a CPU-only torch build and
-spaCy's model gets downloaded during the image build.
+First build will take a while because the Spring and React images still need to
+compile and install their dependencies.
 
 ## Folder structure
 
 ```
 frontend/     React app — upload, camera capture, results form, card list
-backend/      Spring Boot API — orchestration + MongoDB persistence
-ml-service/   FastAPI — preprocessing, OCR, field extraction, logo detection
+backend/      Spring Boot API — direct Qwen call + MongoDB persistence
 ```
 
 ## Next steps
 
-- Swap `ml-service/app/logo_detection.py`'s heuristic for a trained detector
-  if you want higher precision on trickier logos.
 - Add Spring Security + JWT to `backend/` for multi-user support.
 - Add duplicate detection (fuzzy match on phone/email) before saving.
 - Add vCard (.vcf) export from `CardResultForm`.
-- Wire `OPENAI_API_KEY` in as a Kubernetes secret when you deploy to EKS.
+- Wire `QWEN_BASE_URL` in as a Kubernetes secret or config value when you deploy.

@@ -2,8 +2,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { LOW_CONFIDENCE, logoSrc, splitList, type BusinessCard } from "@/lib/api";
-import { AlertTriangle, Copy, Trash2, UserPlus } from "lucide-react";
+import { logoSrc, splitList, type BusinessCard } from "@/lib/api";
+import { Copy, Trash2, UserPlus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
@@ -188,7 +188,6 @@ export function ReviewCard({
   }, [card]);
 
   const set = (k: keyof BusinessCard) => (v: string) => setDraft((d) => ({ ...d, [k]: v }));
-  const lowConfidence = draft.confidence < LOW_CONFIDENCE;
   const contactCard = { ...draft, phones: splitList(phones), emails: splitList(emails) };
   const hasValue = (key: VisibleFieldKey) => {
     switch (key) {
@@ -248,7 +247,7 @@ export function ReviewCard({
           <div className="min-w-0">
             <h2 className="truncate text-lg font-semibold">Review the record</h2>
             <p className="field-mono truncate text-muted-foreground">
-              {draft.extractionSource} · {Math.round(draft.confidence * 100)}% confidence
+              {draft.extractionSource}
             </p>
           </div>
         </div>
@@ -261,15 +260,6 @@ export function ReviewCard({
         )}
       </header>
 
-      {lowConfidence && (
-        <div className="flex items-start gap-3 border-b border-signal/30 bg-signal/10 px-5 py-3 sm:px-7">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-signal" aria-hidden="true" />
-          <p className="text-sm text-signal">
-            The reader wasn't sure about this card. Check every field below — names, digits and
-            domains are the usual suspects — before you file it.
-          </p>
-        </div>
-      )}
 
       {draft.originalImageBase64 && (
         <div className="border-b border-border bg-secondary/20 px-5 py-4 sm:px-7">
@@ -360,7 +350,7 @@ export function ReviewCard({
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium">{variant.variant}</p>
                   <p className="text-xs text-muted-foreground">
-                    score {variant.score.toFixed(1)} · confidence {Math.round(variant.avgConfidence * 100)}%
+                    score {variant.score.toFixed(1)}
                   </p>
                 </div>
                 <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-background p-3 text-xs leading-5 text-foreground">

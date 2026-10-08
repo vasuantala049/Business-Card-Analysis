@@ -2,11 +2,13 @@ package com.vasu.cardanalyzer.dto;
 
 import java.util.List;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import lombok.Data;
 
 @Data
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ExtractionResult {
 
     @JsonProperty("raw_text")
@@ -26,6 +28,7 @@ public class ExtractionResult {
     private List<OcrVariantDebug> ocrVariantsDebug;
 
     @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Fields {
         private String name;
         private String designation;
@@ -37,6 +40,7 @@ public class ExtractionResult {
     }
 
     @Data
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class OcrVariantDebug {
         private String variant;
         private String text;

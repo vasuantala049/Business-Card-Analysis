@@ -1,7 +1,6 @@
-import { LOW_CONFIDENCE, logoSrc, type BusinessCard } from "@/lib/api";
+import { logoSrc, type BusinessCard } from "@/lib/api";
 
 export function CardTile({ card, onOpen }: { card: BusinessCard; onOpen: () => void }) {
-  const needsReview = card.confidence < LOW_CONFIDENCE;
   const contact = card.emails[0] ?? card.phones[0] ?? card.website ?? "No contact details";
 
   return (
@@ -12,11 +11,9 @@ export function CardTile({ card, onOpen }: { card: BusinessCard; onOpen: () => v
     >
       <span
         aria-hidden="true"
-        className={`absolute right-4 top-0 h-5 w-9 rounded-b-[3px] ${
-          needsReview ? "bg-signal" : "bg-brass"
-        }`}
+        className="absolute right-4 top-0 h-5 w-9 rounded-b-[3px] bg-brass"
       />
-      <span className="sr-only">{needsReview ? "Needs review" : "Confident extraction"}</span>
+      <span className="sr-only">Saved card</span>
       <div className="flex h-full flex-col justify-between">
         <div className="flex min-w-0 items-start gap-3 pr-12">
           {card.logoImageBase64 ? (

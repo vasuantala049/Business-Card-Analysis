@@ -9,9 +9,12 @@ import org.springframework.web.reactive.function.client.WebClient;
 public class WebClientConfig {
 
     @Bean
-    public WebClient mlServiceWebClient(@Value("${ml-service.base-url}") String baseUrl) {
+    public WebClient qwenWebClient(@Value("${qwen.base-url}") String baseUrl) {
         return WebClient.builder()
                 .baseUrl(baseUrl)
+                .codecs(configurer -> configurer
+                        .defaultCodecs()
+                        .maxInMemorySize(10 * 1024 * 1024))
                 .build();
     }
 }

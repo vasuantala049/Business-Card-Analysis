@@ -17,11 +17,11 @@ import com.mongodb.MongoException;
 public class ApiExceptionHandler {
 
     @ExceptionHandler({WebClientRequestException.class})
-    public ResponseEntity<Map<String, String>> handleMlServiceUnavailable(WebClientRequestException ex) {
+        public ResponseEntity<Map<String, String>> handleQwenServiceUnavailable(WebClientRequestException ex) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(Map.of(
-                        "error", "ML service is unavailable",
-                        "message", "Could not reach the ML service. Make sure ml-service is running and ML_SERVICE_URL is correct."
+                                                                "error", "Qwen service is unavailable",
+                                "message", "Could not reach the Qwen service. Make sure QWEN_BASE_URL is correct and the endpoint is running."
                 ));
     }
 

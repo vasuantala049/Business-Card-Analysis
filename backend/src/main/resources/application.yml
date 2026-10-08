@@ -28,8 +28,9 @@ app:
   frontend:
     url: ${FRONTEND_URL:http://localhost:3000}
 
-ml-service:
-  base-url: ${ML_SERVICE_URL:http://localhost:8000}
+qwen:
+  base-url: ${QWEN_BASE_URL:http://localhost:9090/v1}
+  model: ${QWEN_MODEL:qwen3-vl}
 
 logging:
   level:

@@ -2,7 +2,7 @@ import { CameraCapture } from "@/components/CameraCapture";
 import { ReviewCard } from "@/components/ReviewCard";
 import { Button } from "@/components/ui/button";
 import { UploadZone } from "@/components/UploadZone";
-import { ApiError, updateCard, uploadCard, type BusinessCard } from "@/lib/api";
+import { ApiError, updateCard, uploadCard, createCard, type BusinessCard } from "@/lib/api";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -87,7 +87,11 @@ function Index() {
   const save = async (edited: BusinessCard) => {
     setStatus("saving");
     try {
-      await updateCard(edited);
+      if (edited.id) {
+        await updateCard(edited);
+      } else {
+        await createCard(edited);
+      }
       toast.success("Card filed");
       reset();
       void navigate({ to: "/gallery" });

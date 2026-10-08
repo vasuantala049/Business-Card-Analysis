@@ -18,7 +18,7 @@ export interface BusinessCard {
   originalImageBase64: string | null;
   logoImageBase64: string | null;
   confidence: number;
-  extractionSource: "openai" | "spacy_regex" | string;
+  extractionSource: "qwen" | "spacy_regex" | string;
   createdAt: string;
 }
 
@@ -35,7 +35,7 @@ export const API_BASE_URL =
 
 export const GOOGLE_AUTH_URL = "/oauth2/authorization/google";
 
-export const LOW_CONFIDENCE = 0.6;
+
 
 export class ApiError extends Error {
   status: number;
@@ -120,6 +120,16 @@ export async function listCards() {
 export async function getCard(id: string) {
   const res = await fetch(`${API_BASE_URL}/cards/${id}`, {
     credentials: "include",
+  });
+  return handle<BusinessCard>(res);
+}
+
+export async function createCard(card: BusinessCard) {
+  const res = await fetch(`${API_BASE_URL}/cards`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(card),
   });
   return handle<BusinessCard>(res);
 }

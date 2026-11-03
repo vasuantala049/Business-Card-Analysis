@@ -1,5 +1,6 @@
 package com.vasu.cardanalyzer.exception;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import org.springframework.dao.DataAccessException;
@@ -16,11 +17,11 @@ import com.mongodb.MongoException;
 public class ApiExceptionHandler {
 
     @ExceptionHandler({WebClientRequestException.class})
-    public ResponseEntity<Map<String, String>> handleMlServiceUnavailable(WebClientRequestException ex) {
+        public ResponseEntity<Map<String, String>> handleQwenServiceUnavailable(WebClientRequestException ex) {
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                 .body(Map.of(
-                        "error", "ML service is unavailable",
-                        "message", "Could not reach the ML service. Make sure ml-service is running and ML_SERVICE_URL is correct."
+                                                                "error", "Qwen service is unavailable",
+                                "message", "Could not reach the Qwen service. Make sure QWEN_BASE_URL is correct and the endpoint is running."
                 ));
     }
 
@@ -33,12 +34,27 @@ public class ApiExceptionHandler {
                 ));
     }
 
+    @ExceptionHandler(DuplicateBusinessCardException.class)
+    public ResponseEntity<Map<String, Object>> handleDuplicateCard(DuplicateBusinessCardException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("error", "Duplicate business card");
+        body.put("message", ex.getMessage());
+        body.put("duplicateCardId", ex.getExistingCardId());
+        body.put("duplicateCardName", ex.getExistingName());
+        body.put("duplicateCardCompany", ex.getExistingCompany());
+        body.put("reasons", ex.getReasons());
+
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(body);
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, String>> handleUnexpected(Exception ex) {
+        ex.printStackTrace();
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of(
-                        "error", "Unexpected server error",
-                        "message", "Something went wrong while processing the request."
+                        "error", ex.getClass().getSimpleName(),
+                        "message", ex.getMessage() != null ? ex.getMessage() : "Something went wrong while processing the request."
                 ));
     }
 }

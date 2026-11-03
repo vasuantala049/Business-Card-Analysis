@@ -12,4 +12,20 @@ export default defineConfig({
     // nitro/vite builds from this
     server: { entry: "server" },
   },
+  vite: {
+    server: {
+      port: 3000,
+      strictPort: true,
+      proxy: {
+        "/api": {
+          target: "http://localhost:8080",
+          changeOrigin: true,
+        },
+        "/oauth2": {
+          target: "http://localhost:8080",
+          changeOrigin: true,
+        },
+      },
+    },
+  },
 });

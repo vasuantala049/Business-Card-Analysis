@@ -1,15 +1,21 @@
-import { useEffect, useRef, useState } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { UploadZone } from "@/components/UploadZone";
 import { CameraCapture } from "@/components/CameraCapture";
 import { ReviewCard } from "@/components/ReviewCard";
-import { ApiError, updateCard, uploadCard, type BusinessCard } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { UploadZone } from "@/components/UploadZone";
+import { ApiError, updateCard, uploadCard, createCard, type BusinessCard } from "@/lib/api";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+
+import { ProtectedRoute } from "@/components/ProtectedRoute";
 
 export const Route = createFileRoute("/")({
-  component: Index,
+  component: () => (
+    <ProtectedRoute>
+      <Index />
+    </ProtectedRoute>
+  ),
   head: () => ({
     meta: [
       { title: "Scan a business card — Cardfile" },
@@ -68,9 +74,11 @@ function Index() {
       setStatus("idle");
       setError(
         e instanceof ApiError
-          ? e.status >= 500
-            ? "The reader couldn't process this image. Try a sharper, well-lit shot of the whole card."
-            : "This image was rejected as unreadable. Fill the frame with the card and avoid glare."
+          ? e.status === 409
+            ? e.message
+            : e.status >= 500
+              ? "The reader couldn't process this image. Try a sharper, well-lit shot of the whole card."
+              : "This image was rejected as unreadable. Fill the frame with the card and avoid glare."
           : "Couldn't reach the card service. Check your connection, then try the scan again.",
       );
     }
@@ -79,7 +87,11 @@ function Index() {
   const save = async (edited: BusinessCard) => {
     setStatus("saving");
     try {
-      await updateCard(edited);
+      if (edited.id) {
+        await updateCard(edited);
+      } else {
+        await createCard(edited);
+      }
       toast.success("Card filed");
       reset();
       void navigate({ to: "/gallery" });
